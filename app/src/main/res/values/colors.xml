@@ -1,0 +1,15 @@
+<resources>
+    <color name="bg_dark">#0F1115</color>
+    <color name="surface_dark">#181A20</color>
+    <color name="surface_card">#22252D</color>
+    <color name="surface_input">#15171C</color>
+    <color name="apple_red">#FA2D48</color>
+    <color name="discord_blurple">#5865F2</color>
+    <color name="status_green">#23A55A</color>
+    <color name="status_yellow">#FEE75C</color>
+    <color name="status_red">#ED4245</color>
+    <color name="text_primary">#F2F3F5</color>
+    <color name="text_secondary">#949BA4</color>
+    <color name="text_muted">#6D737E</color>
+    <color name="divider">#2E313A</color>
+</resources>

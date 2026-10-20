@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Music Presence</string>
+    <string name="service_notification_title">Music Presence</string>
+    <string name="service_notification_desc">Listening for Apple Music playback...</string>
+    <string name="listening_to">Listening to Apple Music</string>
+    <string name="status_connected">Gateway Connected</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_idle">Idle (No song playing)</string>
+    <string name="status_playing">Listening: %1$s - %2$s</string>
+</resources>
