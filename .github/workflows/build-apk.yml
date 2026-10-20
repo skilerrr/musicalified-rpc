@@ -23,12 +23,22 @@ jobs:
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.7'
+        cache-disabled: true
 
     - name: Make gradlew executable
       run: chmod +x gradlew
 
     - name: Build Debug APK
-      run: ./gradlew assembleDebug --no-daemon --stacktrace
+      run: |
+        ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+
+    - name: Publish Log on Failure
+      if: failure()
+      run: |
+        echo "## Build Failure Log" >> $GITHUB_STEP_SUMMARY
+        echo '```text' >> $GITHUB_STEP_SUMMARY
+        tail -n 120 build.log >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
 
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
