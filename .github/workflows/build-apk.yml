@@ -30,21 +30,23 @@ jobs:
 
     - name: Build Debug APK
       run: |
-        set -o pipefail
-        ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+        ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log || {
+            echo "========== COMPILER ERROR DUMP =========="
+            grep -E -C 2 "(e: |error:|FAILURE:)" build.log || tail -n 100 build.log
+            exit 1
+        }
 
     - name: Check APK Output
       run: |
         ls -laR app/build/outputs/ || true
         find . -name "*.apk" || true
 
-    - name: Publish Build Summary
-      if: always()
-      run: |
-        echo "## Build Log Summary" >> $GITHUB_STEP_SUMMARY
-        echo '```text' >> $GITHUB_STEP_SUMMARY
-        if [ -f build.log ]; then tail -n 80 build.log >> $GITHUB_STEP_SUMMARY; fi
-        echo '```' >> $GITHUB_STEP_SUMMARY
+    - name: Upload Build Log on Failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
 
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4

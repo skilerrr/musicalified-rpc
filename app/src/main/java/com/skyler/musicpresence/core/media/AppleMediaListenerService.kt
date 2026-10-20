@@ -121,12 +121,12 @@ class AppleMediaListenerService : NotificationListenerService() {
 
     private fun handleMediaChange() {
         val controller = appleMusicController ?: return
-        val playbackState = controller.playbackState
-        val metadata = controller.metadata
+        val playbackState = controller.playbackState ?: return
+        val metadata = controller.metadata ?: return
 
-        val isPlaying = playbackState?.state == PlaybackState.STATE_PLAYING
+        val isPlaying = playbackState.state == PlaybackState.STATE_PLAYING
 
-        if (!isPlaying || metadata == null) {
+        if (!isPlaying) {
             clearActiveTrack()
             return
         }
