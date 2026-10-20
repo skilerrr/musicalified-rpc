@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.MusicPresence" parent="Theme.Material3.Dark.NoActionBar">
+    <style name="Theme.MusicPresence" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:statusBarColor">@color/bg_dark</item>
         <item name="android:navigationBarColor">@color/bg_dark</item>
         <item name="android:windowBackground">@color/bg_dark</item>
