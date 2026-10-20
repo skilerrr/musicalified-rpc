@@ -24,9 +24,7 @@ import kotlinx.coroutines.*
 class AppleMediaListenerService : NotificationListenerService() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private lateinit var prefs: AppPreferences
     private lateinit var discordGateway: DiscordGateway
-    private lateinit var itunesClient: iTunesSearchClient
     private lateinit var mediaSessionManager: MediaSessionManager
 
     private var appleMusicController: MediaController? = null
@@ -57,8 +55,6 @@ class AppleMediaListenerService : NotificationListenerService() {
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "AppleMediaListenerService onCreate")
-        prefs = AppPreferences(this)
-        itunesClient = iTunesSearchClient()
         mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
 
         discordGateway = DiscordGateway(serviceScope) { isConnected ->
@@ -74,8 +70,8 @@ class AppleMediaListenerService : NotificationListenerService() {
         Log.i(TAG, "NotificationListener connected")
 
         // Auto-connect Discord gateway if token exists and service enabled
-        val token = prefs.discordToken
-        if (prefs.isServiceEnabled && token.isNotBlank()) {
+        val token = AppPreferences.discordToken
+        if (AppPreferences.serviceEnabled && token.isNotBlank()) {
             discordGateway.connect(token)
         }
 
@@ -148,24 +144,24 @@ class AppleMediaListenerService : NotificationListenerService() {
         updatePresenceJob = serviceScope.launch(Dispatchers.IO) {
             delay(1200)
 
-            val searchResult = if (prefs.showArtwork || prefs.showButton) {
-                itunesClient.searchTrack(title, artist)
+            val searchResult = if (AppPreferences.showArtwork || AppPreferences.showButton) {
+                iTunesSearchClient.resolveTrack(title, artist)
             } else null
 
             val now = System.currentTimeMillis()
-            val startTimestamp = if (prefs.showTimestamps && position >= 0) now - position else null
-            val endTimestamp = if (prefs.showTimestamps && duration > 0) startTimestamp?.plus(duration) else null
+            val startTimestamp = if (AppPreferences.showTimestamps && position >= 0) now - position else null
+            val endTimestamp = if (AppPreferences.showTimestamps && duration > 0) startTimestamp?.plus(duration) else null
 
             val payload = DiscordPayloads.createPresenceUpdate(
-                applicationId = prefs.applicationId,
+                applicationId = AppPreferences.discordAppId,
                 title = title,
                 artist = artist,
                 album = album,
                 startTimestamp = startTimestamp,
                 endTimestamp = endTimestamp,
-                artworkUrl = if (prefs.showArtwork) searchResult?.artworkUrl else null,
-                songUrl = if (prefs.showButton) searchResult?.trackViewUrl else null,
-                showButtons = prefs.showButton
+                artworkUrl = if (AppPreferences.showArtwork) searchResult?.coverUrl else null,
+                songUrl = if (AppPreferences.showButton) searchResult?.songUrl else null,
+                showButtons = AppPreferences.showButton
             )
 
             discordGateway.updatePresence(payload)

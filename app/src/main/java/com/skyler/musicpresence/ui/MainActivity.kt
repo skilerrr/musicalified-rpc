@@ -18,15 +18,12 @@ import com.skyler.musicpresence.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var prefs: AppPreferences
     private var isTokenVisible = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
-        prefs = AppPreferences(this)
 
         setupUI()
         setupListeners()
@@ -39,11 +36,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupUI() {
         // Load saved preferences
-        binding.etDiscordToken.setText(prefs.discordToken)
-        binding.switchService.isChecked = prefs.isServiceEnabled
-        binding.switchArtwork.isChecked = prefs.showArtwork
-        binding.switchButton.isChecked = prefs.showButton
-        binding.switchTimestamps.isChecked = prefs.showTimestamps
+        binding.etDiscordToken.setText(AppPreferences.discordToken)
+        binding.switchService.isChecked = AppPreferences.serviceEnabled
+        binding.switchArtwork.isChecked = AppPreferences.showArtwork
+        binding.switchButton.isChecked = AppPreferences.showButton
+        binding.switchTimestamps.isChecked = AppPreferences.showTimestamps
     }
 
     private fun setupListeners() {
@@ -61,27 +58,27 @@ class MainActivity : AppCompatActivity() {
         // Save token
         binding.btnSaveToken.setOnClickListener {
             val token = binding.etDiscordToken.text.toString().trim()
-            prefs.discordToken = token
+            AppPreferences.discordToken = token
             Toast.makeText(this, "Discord token saved!", Toast.LENGTH_SHORT).show()
         }
 
         // Switches
         binding.switchService.setOnCheckedChangeListener { _, isChecked ->
-            prefs.isServiceEnabled = isChecked
+            AppPreferences.serviceEnabled = isChecked
             val status = if (isChecked) "enabled" else "disabled"
             Toast.makeText(this, "Service $status", Toast.LENGTH_SHORT).show()
         }
 
         binding.switchArtwork.setOnCheckedChangeListener { _, isChecked ->
-            prefs.showArtwork = isChecked
+            AppPreferences.showArtwork = isChecked
         }
 
         binding.switchButton.setOnCheckedChangeListener { _, isChecked ->
-            prefs.showButton = isChecked
+            AppPreferences.showButton = isChecked
         }
 
         binding.switchTimestamps.setOnCheckedChangeListener { _, isChecked ->
-            prefs.showTimestamps = isChecked
+            AppPreferences.showTimestamps = isChecked
         }
 
         // Permissions
