@@ -19,6 +19,7 @@ import androidx.core.app.NotificationCompat
 import com.skyler.musicpresence.R
 import com.skyler.musicpresence.core.discord.DiscordPayloads
 import com.skyler.musicpresence.core.itunes.iTunesSearchClient
+import com.skyler.musicpresence.core.discord.ExternalAssetClient
 import com.skyler.musicpresence.core.prefs.AppPreferences
 import com.skyler.musicpresence.core.runtime.PresenceRuntime
 import com.skyler.musicpresence.ui.MainActivity
@@ -41,6 +42,7 @@ class AppleMediaListenerService : Service() {
     private lateinit var mediaSessionManager: MediaSessionManager
     private lateinit var prefs: AppPreferences
     private val itunesClient = iTunesSearchClient()
+    private val externalAssetClient = ExternalAssetClient()
 
     private var activeController: MediaController? = null
     private var debounceJob: Job? = null
@@ -171,6 +173,13 @@ class AppleMediaListenerService : Service() {
             val startTs = if (prefs.showTimestamps && position >= 0) now - position else null
             val endTs = if (prefs.showTimestamps && duration > 0) (startTs ?: now) + duration else null
 
+            // Discord refuses unregistered remote URLs for assets - they render as the
+            // grey question mark. Register the iTunes cover first, then use "mp:...".
+            val artwork = if (prefs.showArtwork) search?.artworkUrl else null
+            val artworkRef = artwork?.let { url ->
+                externalAssetClient.register(appId.orEmpty(), prefs.discordToken, url)
+            } ?: artwork
+
             val buttons = buildList {
                 if (appId != null && prefs.showButton) {
                     add("Get This Status" to REPO_URL)
@@ -183,7 +192,7 @@ class AppleMediaListenerService : Service() {
                 album = album,
                 startTimestamp = startTs,
                 endTimestamp = endTs,
-                artworkUrl = if (prefs.showArtwork) search?.artworkUrl else null,
+                artworkUrl = artworkRef,
                 buttons = buttons,
                 applicationId = appId
             )
