@@ -12,7 +12,7 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putString(KEY_DISCORD_TOKEN, value.trim()).apply()
 
     var applicationId: String
-        get() = prefs.getString(KEY_APPLICATION_ID, DEFAULT_APP_ID).orEmpty().ifBlank { DEFAULT_APP_ID }
+        get() = prefs.getString(KEY_APPLICATION_ID, DEFAULT_APP_ID).orEmpty()
         set(value) = prefs.edit().putString(KEY_APPLICATION_ID, value.trim()).apply()
 
     var showArtwork: Boolean
@@ -40,7 +40,7 @@ class AppPreferences(context: Context) {
         private const val KEY_SHOW_TIMESTAMPS = "show_timestamps"
         private const val KEY_SERVICE_ENABLED = "service_enabled"
 
-        // Default Discord Application ID for Apple Music (Community / Kizzy standard preset)
-        const val DEFAULT_APP_ID = "1138472986289258526"
+        // Optional: only used for artwork/buttons. Empty = plain presence activity.
+        const val DEFAULT_APP_ID = ""
     }
 }

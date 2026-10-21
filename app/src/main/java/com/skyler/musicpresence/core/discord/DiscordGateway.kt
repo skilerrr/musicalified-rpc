@@ -1,184 +1,256 @@
 package com.skyler.musicpresence.core.discord
 
-import android.util.Log
-import kotlinx.coroutines.*
-import okhttp3.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
+enum class GatewayState { DISCONNECTED, CONNECTING, READY, FAILED }
+
+/**
+ * Minimal Discord Gateway (v10) presence client.
+ * One socket, one heartbeat loop, event driven, no polling.
+ */
 class DiscordGateway(
     private val scope: CoroutineScope,
-    private val onConnectionStateChanged: (Boolean) -> Unit = {}
+    private val onStateChanged: (GatewayState, String?) -> Unit,
+    private val log: (String) -> Unit
 ) {
     private val client = OkHttpClient.Builder()
         .pingInterval(30, TimeUnit.SECONDS)
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS) // Indefinite for WebSocket
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
-    private var webSocket: WebSocket? = null
+    private var socket: WebSocket? = null
     private var heartbeatJob: Job? = null
-    private val isConnected = AtomicBoolean(false)
-    private val lastSequence = AtomicInteger(-1)
+    private var reconnectJob: Job? = null
+    private val sequence = AtomicInteger(-1)
+
     private var currentToken: String? = null
-    private var isIntentionalClose = false
+    private var generation = 0
+    private var attempt = 0
 
-    private val wsListener = object : WebSocketListener() {
-        override fun onOpen(ws: WebSocket, response: Response) {
-            Log.d(TAG, "Gateway socket opened")
-        }
+    @Volatile
+    private var ready = false
 
-        override fun onMessage(ws: WebSocket, text: String) {
-            handleGatewayMessage(text)
-        }
+    @Volatile
+    private var shuttingDown = false
 
-        override fun onClosing(ws: WebSocket, code: Int, reason: String) {
-            Log.d(TAG, "Gateway closing: $code / $reason")
-            ws.close(code, reason)
-        }
-
-        override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-            Log.d(TAG, "Gateway closed: $code / $reason")
-            cleanupConnection()
-            if (!isIntentionalClose && !currentToken.isNullOrBlank()) {
-                scheduleReconnect()
-            }
-        }
-
-        override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-            Log.e(TAG, "Gateway error: ${t.message}", t)
-            cleanupConnection()
-            if (!isIntentionalClose && !currentToken.isNullOrBlank()) {
-                scheduleReconnect()
-            }
-        }
-    }
+    fun isReady(): Boolean = ready
 
     fun connect(token: String) {
         if (token.isBlank()) {
-            Log.w(TAG, "Cannot connect: Token is empty")
+            log("No token saved - cannot connect")
             return
         }
-        if (isConnected.get() && currentToken == token) {
-            return
-        }
+        if (ready && currentToken == token) return
 
-        disconnect()
+        closeSocket(clearPresence = false)
         currentToken = token
-        isIntentionalClose = false
-
-        val request = Request.Builder()
-            .url(GATEWAY_URL)
-            .header("User-Agent", "Discord-Android/200000")
-            .build()
-
-        webSocket = client.newWebSocket(request, wsListener)
+        shuttingDown = false
+        ready = false
+        attempt = 0
+        sequence.set(-1)
+        openSocket()
     }
 
     fun disconnect() {
-        isIntentionalClose = true
-        clearPresence()
-        cleanupConnection()
-        webSocket?.close(1000, "User disconnected")
-        webSocket = null
+        shuttingDown = true
+        ready = false
+        reconnectJob?.cancel()
+        reconnectJob = null
+        closeSocket(clearPresence = true)
         currentToken = null
+        onStateChanged(GatewayState.DISCONNECTED, "Stopped by user")
     }
 
-    fun updatePresence(payload: String) {
-        if (!isConnected.get()) {
-            Log.w(TAG, "Presence update queued/skipped: Gateway not ready yet")
+    fun sendPresence(json: String) {
+        if (!ready) {
+            log("Presence skipped - gateway not READY yet")
             return
         }
-        webSocket?.send(payload)
+        socket?.send(json)
     }
 
     fun clearPresence() {
-        if (isConnected.get()) {
-            webSocket?.send(DiscordPayloads.createClearPresence())
-        }
+        if (!ready) return
+        socket?.send(DiscordPayloads.createClearPresence())
     }
 
-    private fun handleGatewayMessage(raw: String) {
-        try {
-            val json = JSONObject(raw)
-            val op = json.optInt("op", -1)
-            val s = json.optInt("s", -1)
-            if (s >= 0) lastSequence.set(s)
+    private fun openSocket() {
+        val token = currentToken ?: return
+        val gen = ++generation
+        onStateChanged(GatewayState.CONNECTING, "Opening gateway socket")
 
-            when (op) {
-                10 -> { // Opcode 10 Hello
-                    val d = json.getJSONObject("d")
-                    val interval = d.getLong("heartbeat_interval")
-                    Log.d(TAG, "Received Hello, interval: $interval ms")
-                    startHeartbeat(interval)
+        val request = Request.Builder()
+            .url(GATEWAY_URL)
+            .header("User-Agent", "Discord-Android/215000")
+            .build()
 
-                    // Immediately identify
-                    currentToken?.let { token ->
-                        val identify = DiscordPayloads.createIdentify(token)
-                        webSocket?.send(identify)
-                    }
-                }
-                0 -> { // Dispatch
-                    val t = json.optString("t", "")
-                    if (t == "READY") {
-                        Log.i(TAG, "Gateway is READY! Identified successfully.")
-                        isConnected.set(true)
-                        onConnectionStateChanged(true)
-                    }
-                }
-                1 -> { // Discord requesting immediate heartbeat
-                    sendHeartbeat()
-                }
-                11 -> { // Heartbeat ACK
-                    Log.v(TAG, "Heartbeat ACK received")
+        socket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(ws: WebSocket, response: Response) {
+                if (gen != generation) return
+                log("Socket open (HTTP ${response.code})")
+            }
+
+            override fun onMessage(ws: WebSocket, text: String) {
+                if (gen != generation) return
+                handleMessage(text, token)
+            }
+
+            override fun onClosing(ws: WebSocket, code: Int, reason: String) {
+                if (gen != generation) return
+                ws.close(1000, null)
+            }
+
+            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                if (gen != generation) return
+                ready = false
+                heartbeatJob?.cancel()
+                log("Socket closed: $code ${describeClose(code)} $reason".trim())
+                if (shuttingDown) {
+                    onStateChanged(GatewayState.DISCONNECTED, null)
+                } else {
+                    scheduleReconnect(code, reason)
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error parsing gateway message: ${e.message}")
+
+            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                if (gen != generation) return
+                ready = false
+                heartbeatJob?.cancel()
+                log("Socket error: ${t.message ?: t.javaClass.simpleName}")
+                if (shuttingDown) {
+                    onStateChanged(GatewayState.DISCONNECTED, t.message)
+                } else {
+                    scheduleReconnect(-1, t.message ?: "")
+                }
+            }
+        })
+    }
+
+    private fun handleMessage(raw: String, token: String) {
+        val json = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        val op = json.optInt("op", -1)
+        if (json.has("s") && !json.isNull("s")) sequence.set(json.optInt("s", -1))
+
+        when (op) {
+            10 -> {
+                val interval = json.optJSONObject("d")?.optLong("heartbeat_interval", 41250L) ?: 41250L
+                log("Hello received (heartbeat ${interval}ms)")
+                startHeartbeat(interval)
+                socket?.send(DiscordPayloads.createIdentify(token))
+                log("Identify sent")
+            }
+            0 -> {
+                when (json.optString("t", "")) {
+                    "READY" -> {
+                        ready = true
+                        attempt = 0
+                        log("READY - gateway authenticated")
+                        onStateChanged(GatewayState.READY, null)
+                    }
+                    "RESUMED" -> {
+                        ready = true
+                        log("Session resumed")
+                        onStateChanged(GatewayState.READY, null)
+                    }
+                }
+            }
+            1 -> sendHeartbeat()
+            7 -> {
+                log("Gateway asked to reconnect")
+                socket?.close(4000, "reconnect requested")
+            }
+            9 -> {
+                log("Invalid session - re-identifying in 2s")
+                scope.launch {
+                    delay(2000)
+                    socket?.send(DiscordPayloads.createIdentify(token))
+                }
+            }
+            11 -> Unit
         }
     }
 
     private fun startHeartbeat(intervalMs: Long) {
         heartbeatJob?.cancel()
-        heartbeatJob = scope.launch(Dispatchers.IO) {
+        heartbeatJob = scope.launch {
             while (isActive) {
                 delay(intervalMs)
-                sendHeartbeat()
+                if (ready) sendHeartbeat()
             }
         }
     }
 
     private fun sendHeartbeat() {
-        val seq = lastSequence.get().takeIf { it >= 0 }
-        val payload = DiscordPayloads.createHeartbeat(seq)
-        webSocket?.send(payload)
+        val seq = sequence.get().takeIf { it >= 0 }
+        socket?.send(DiscordPayloads.createHeartbeat(seq))
     }
 
-    private fun cleanupConnection() {
+    private fun closeSocket(clearPresence: Boolean) {
+        if (clearPresence) {
+            runCatching { socket?.send(DiscordPayloads.createClearPresence()) }
+        }
         heartbeatJob?.cancel()
         heartbeatJob = null
-        val wasConnected = isConnected.getAndSet(false)
-        if (wasConnected) {
-            onConnectionStateChanged(false)
+        generation++
+        runCatching { socket?.close(1000, "client shutdown") }
+        socket = null
+    }
+
+    private fun scheduleReconnect(code: Int, reason: String) {
+        if (code == 4004) {
+            onStateChanged(GatewayState.FAILED, "4004 authentication failed - token invalid")
+            log("FATAL: token rejected (4004). Fix token in app, then tap Reconnect.")
+            return
+        }
+        if (code == 4013 || code == 4014) {
+            onStateChanged(GatewayState.FAILED, "Closed ${code}: ${describeClose(code)}")
+            return
+        }
+        attempt++
+        val backoff = (5_000L * attempt).coerceAtMost(60_000L)
+        onStateChanged(GatewayState.CONNECTING, "Reconnecting in ${backoff / 1000}s")
+        log("Reconnect attempt $attempt in ${backoff / 1000}s (last: $code $reason)")
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch {
+            delay(backoff)
+            if (!shuttingDown && !ready) openSocket()
         }
     }
 
-    private fun scheduleReconnect() {
-        scope.launch(Dispatchers.IO) {
-            delay(5000)
-            currentToken?.let { token ->
-                if (!isConnected.get()) {
-                    Log.d(TAG, "Attempting reconnect to Gateway...")
-                    connect(token)
-                }
-            }
-        }
+    private fun describeClose(code: Int): String = when (code) {
+        1000 -> "normal closure"
+        1001 -> "going away"
+        4000 -> "unknown error"
+        4001 -> "unknown opcode"
+        4002 -> "decode error"
+        4003 -> "not authenticated"
+        4004 -> "authentication failed"
+        4005 -> "already authenticated"
+        4007 -> "invalid seq"
+        4008 -> "rate limited"
+        4009 -> "session timed out"
+        4010 -> "invalid shard"
+        4011 -> "sharding required"
+        4013 -> "invalid intents"
+        4014 -> "disallowed intents"
+        else -> ""
     }
 
     companion object {
-        private const val TAG = "DiscordGateway"
-        private const val GATEWAY_URL = "wss://gateway.discord.gg/?v=9&encoding=json"
+        private const val GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json"
     }
 }

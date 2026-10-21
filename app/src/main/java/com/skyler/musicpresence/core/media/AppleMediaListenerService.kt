@@ -1,6 +1,10 @@
 package com.skyler.musicpresence.core.media
 
-import android.app.*
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -10,225 +14,232 @@ import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Build
-import android.service.notification.NotificationListenerService
-import android.util.Log
+import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.skyler.musicpresence.R
-import com.skyler.musicpresence.core.discord.DiscordGateway
 import com.skyler.musicpresence.core.discord.DiscordPayloads
 import com.skyler.musicpresence.core.itunes.iTunesSearchClient
 import com.skyler.musicpresence.core.prefs.AppPreferences
+import com.skyler.musicpresence.core.runtime.PresenceRuntime
 import com.skyler.musicpresence.ui.MainActivity
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-class AppleMediaListenerService : NotificationListenerService() {
+/**
+ * Plain foreground service (0% polling): it only reacts to MediaSession callbacks
+ * for Apple Music and forwards them to the Discord gateway.
+ */
+class AppleMediaListenerService : Service() {
 
-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private lateinit var discordGateway: DiscordGateway
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var mediaSessionManager: MediaSessionManager
     private lateinit var prefs: AppPreferences
     private val itunesClient = iTunesSearchClient()
 
-    private var appleMusicController: MediaController? = null
-    private var updatePresenceJob: Job? = null
-    private var lastTrackTitle: String = ""
-    private var lastTrackArtist: String = ""
+    private var activeController: MediaController? = null
+    private var debounceJob: Job? = null
+    private var lastKey: String = ""
 
-    private val mediaControllerCallback = object : MediaController.Callback() {
-        override fun onPlaybackStateChanged(state: PlaybackState?) {
-            super.onPlaybackStateChanged(state)
-            Log.d(TAG, "PlaybackState changed: ${state?.state}")
-            handleMediaChange()
-        }
+    private val sessionsListener =
+        MediaSessionManager.OnActiveSessionsChangedListener { sessions -> checkSessions(sessions) }
 
-        override fun onMetadataChanged(metadata: MediaMetadata?) {
-            super.onMetadataChanged(metadata)
-            Log.d(TAG, "Metadata changed: ${metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)}")
-            handleMediaChange()
-        }
-
+    private val mediaCallback = object : MediaController.Callback() {
+        override fun onPlaybackStateChanged(state: PlaybackState?) = handleMediaChange()
+        override fun onMetadataChanged(metadata: MediaMetadata?) = handleMediaChange()
         override fun onSessionDestroyed() {
-            super.onSessionDestroyed()
-            Log.d(TAG, "Apple Music session destroyed")
-            clearActiveTrack()
+            PresenceRuntime.log("Apple Music session closed")
+            clearPlaying()
         }
     }
+
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        Log.i(TAG, "AppleMediaListenerService onCreate")
         prefs = AppPreferences(this)
         mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
 
-        discordGateway = DiscordGateway(serviceScope) { isConnected ->
-            updateNotification(isConnected)
-        }
-
         createNotificationChannel()
-        startForegroundServiceNotification()
+        promoteToForeground()
+
+        PresenceRuntime.log("Presence service started")
+        PresenceRuntime.ensureConnected(prefs.discordToken, prefs.isServiceEnabled)
+        registerSessionListener()
     }
 
-    override fun onListenerConnected() {
-        super.onListenerConnected()
-        Log.i(TAG, "NotificationListener connected")
-
-        // Auto-connect Discord gateway if token exists and service enabled
-        val token = prefs.discordToken
-        if (prefs.isServiceEnabled && token.isNotBlank()) {
-            discordGateway.connect(token)
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_FORCE_RECONNECT -> {
+                PresenceRuntime.forceReconnect(prefs.discordToken)
+                scanSessions()
+            }
+            ACTION_CONFIG_CHANGED -> {
+                PresenceRuntime.ensureConnected(prefs.discordToken, prefs.isServiceEnabled)
+                scanSessions()
+            }
+            ACTION_STOP_SERVICE -> stopSelf()
+            else -> scanSessions()
         }
-
-        setupMediaSessions()
+        return START_STICKY
     }
 
-    override fun onListenerDisconnected() {
-        super.onListenerDisconnected()
-        Log.i(TAG, "NotificationListener disconnected")
-        cleanupMediaController()
-    }
-
-    private fun setupMediaSessions() {
-        val componentName = ComponentName(this, AppleMediaListenerService::class.java)
+    private fun registerSessionListener() {
         try {
             mediaSessionManager.addOnActiveSessionsChangedListener(
-                { sessions -> checkActiveSessions(sessions) },
-                componentName
+                sessionsListener,
+                ComponentName(this, AppleNotificationListener::class.java)
             )
-            checkActiveSessions(mediaSessionManager.getActiveSessions(componentName))
-        } catch (e: SecurityException) {
-            Log.e(TAG, "Failed to get active sessions: ${e.message}")
+            scanSessions()
+        } catch (e: Exception) {
+            PresenceRuntime.log("Need notification access to read media sessions")
         }
     }
 
-    private fun checkActiveSessions(sessions: List<MediaController>?) {
-        val appleSession = sessions?.firstOrNull { it.packageName == APPLE_MUSIC_PACKAGE }
-        if (appleSession != null) {
-            if (appleMusicController?.sessionToken != appleSession.sessionToken) {
-                cleanupMediaController()
-                Log.i(TAG, "Hooked to Apple Music session")
-                appleMusicController = appleSession
-                appleSession.registerCallback(mediaControllerCallback)
-                handleMediaChange()
-            }
-        } else {
-            if (appleMusicController != null) {
-                Log.d(TAG, "Apple Music session gone")
-                cleanupMediaController()
-                clearActiveTrack()
-            }
+    private fun scanSessions() {
+        try {
+            val sessions = mediaSessionManager.getActiveSessions(
+                ComponentName(this, AppleNotificationListener::class.java)
+            )
+            checkSessions(sessions)
+        } catch (e: Exception) {
+            PresenceRuntime.log("Session scan blocked: ${e.javaClass.simpleName}")
         }
+    }
+
+    private fun checkSessions(sessions: List<MediaController>?) {
+        val apple = sessions?.firstOrNull { it.packageName in SUPPORTED_PACKAGES }
+        if (apple == null) {
+            if (activeController != null) {
+                unbindActive()
+                clearPlaying()
+            }
+            return
+        }
+        if (activeController?.sessionToken != apple.sessionToken) {
+            unbindActive()
+            activeController = apple
+            apple.registerCallback(mediaCallback, null)
+            PresenceRuntime.log("Hooked ${apple.packageName}")
+        }
+        handleMediaChange()
     }
 
     private fun handleMediaChange() {
-        val controller = appleMusicController ?: return
-        val playbackState = controller.playbackState ?: return
-        val metadata = controller.metadata ?: return
+        val controller = activeController ?: return
+        val playback = controller.playbackState
+        val meta = controller.metadata
 
-        val isPlaying = playbackState.state == PlaybackState.STATE_PLAYING
-
-        if (!isPlaying) {
-            clearActiveTrack()
+        val state = playback?.state ?: PlaybackState.STATE_NONE
+        if (state != PlaybackState.STATE_PLAYING || meta == null) {
+            clearPlaying()
             return
         }
 
-        val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
-        val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
-        val album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty()
-        val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
-        val position = playbackState.position
+        val title = meta.getString(MediaMetadata.METADATA_KEY_TITLE)?.trim().orEmpty()
+        val artist = meta.getString(MediaMetadata.METADATA_KEY_ARTIST)?.trim()
+            ?: meta.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)?.trim().orEmpty()
+        val album = meta.getString(MediaMetadata.METADATA_KEY_ALBUM)?.trim().orEmpty()
+        val duration = meta.getLong(MediaMetadata.METADATA_KEY_DURATION)
+        val position = playback?.position ?: -1L
 
-        if (title.isBlank() || artist.isBlank()) {
-            clearActiveTrack()
+        if (title.isBlank()) {
+            clearPlaying()
             return
         }
 
-        // Debounce update (1.2s) to prevent spamming Gateway during track scrubbing / rapid skip
-        updatePresenceJob?.cancel()
-        updatePresenceJob = serviceScope.launch(Dispatchers.IO) {
-            delay(1200)
+        val key = "$title\u0000$artist\u0000$album"
+        if (key == lastKey && debounceJob?.isActive == true) return
+        lastKey = key
 
-            val searchResult = if (prefs.showArtwork || prefs.showButton) {
+        debounceJob?.cancel()
+        debounceJob = scope.launch(Dispatchers.IO) {
+            delay(1200) // debounce rapid skips so Discord is not spammed
+
+            val search = if (prefs.showArtwork || prefs.showButton) {
                 itunesClient.searchTrack(title, artist)
             } else null
 
             val now = System.currentTimeMillis()
-            val startTimestamp = if (prefs.showTimestamps && position >= 0) now - position else null
-            val endTimestamp = if (prefs.showTimestamps && duration > 0) startTimestamp?.plus(duration) else null
+            val startTs = if (prefs.showTimestamps && position >= 0) now - position else null
+            val endTs = if (prefs.showTimestamps && duration > 0) (startTs ?: now) + duration else null
 
             val payload = DiscordPayloads.createPresenceUpdate(
-                applicationId = prefs.applicationId,
                 title = title,
                 artist = artist,
                 album = album,
-                startTimestamp = startTimestamp,
-                endTimestamp = endTimestamp,
-                artworkUrl = if (prefs.showArtwork) searchResult?.artworkUrl else null,
-                songUrl = if (prefs.showButton) searchResult?.trackViewUrl else null,
-                showButtons = prefs.showButton
+                startTimestamp = startTs,
+                endTimestamp = endTs,
+                artworkUrl = if (prefs.showArtwork) search?.artworkUrl else null,
+                songUrl = if (prefs.showButton) search?.trackViewUrl else null,
+                showButtons = prefs.showButton,
+                applicationId = prefs.applicationId.takeIf { it.isNotBlank() }
             )
 
-            discordGateway.updatePresence(payload)
-            lastTrackTitle = title
-            lastTrackArtist = artist
+            PresenceRuntime.updatePresence(payload)
+            val label = if (artist.isNotBlank()) "$title \u2022 $artist" else title
+            PresenceRuntime.setTrack(label)
+            PresenceRuntime.log("Presence sent: $label")
 
-            withContext(Dispatchers.Main) {
-                updateNotification(true, "$title - $artist")
+            withContext(Dispatchers.Main) { updateNotification(label) }
+        }
+    }
+
+    private fun clearPlaying() {
+        debounceJob?.cancel()
+        lastKey = ""
+        PresenceRuntime.clearPresence()
+        PresenceRuntime.setTrack(null)
+        updateNotification(null)
+    }
+
+    private fun unbindActive() {
+        runCatching { activeController?.unregisterCallback(mediaCallback) }
+        activeController = null
+    }
+
+    private fun promoteToForeground() {
+        try {
+            val note = buildNotification(null)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, note, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            } else {
+                startForeground(NOTIFICATION_ID, note)
             }
+        } catch (e: Exception) {
+            PresenceRuntime.log("Foreground promotion failed: ${e.message}")
         }
     }
 
-    private fun clearActiveTrack() {
-        updatePresenceJob?.cancel()
-        lastTrackTitle = ""
-        lastTrackArtist = ""
-        discordGateway.clearPresence()
-        updateNotification(true, null)
-    }
-
-    private fun cleanupMediaController() {
-        appleMusicController?.unregisterCallback(mediaControllerCallback)
-        appleMusicController = null
-    }
-
-    private fun startForegroundServiceNotification() {
-        val notification = buildNotification(false, null)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+    private fun updateNotification(track: String?) {
+        runCatching {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(NOTIFICATION_ID, buildNotification(track))
         }
     }
 
-    private fun updateNotification(isConnected: Boolean, songInfo: String? = null) {
-        val notification = buildNotification(isConnected, songInfo)
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, notification)
-    }
-
-    private fun buildNotification(isConnected: Boolean, songInfo: String?): Notification {
-        val openAppIntent = PendingIntent.getActivity(
+    private fun buildNotification(track: String?): Notification {
+        val launchIntent = PendingIntent.getActivity(
             this,
             0,
             Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val contentText = when {
-            !songInfo.isNullOrBlank() -> "Listening: $songInfo"
-            isConnected -> "Ready & listening for playback"
-            else -> "Connecting to Discord..."
-        }
+        val text = track?.let { "Playing: $it" } ?: "Waiting for Apple Music playback"
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Apple Music Presence")
-            .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_apple_music)
+            .setContentTitle("Musicalified \u2022 RPC")
+            .setContentText(text)
             .setOngoing(true)
-            .setContentIntent(openAppIntent)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(launchIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
@@ -237,10 +248,10 @@ class AppleMediaListenerService : NotificationListenerService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Presence Service",
+                "Playback Presence",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps Apple Music Rich Presence running in background"
+                description = "Live Apple Music rich presence status"
                 setShowBadge(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
@@ -250,16 +261,25 @@ class AppleMediaListenerService : NotificationListenerService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.i(TAG, "AppleMediaListenerService onDestroy")
-        cleanupMediaController()
-        discordGateway.disconnect()
-        serviceScope.cancel()
+        runCatching { mediaSessionManager.removeOnActiveSessionsChangedListener(sessionsListener) }
+        unbindActive()
+        debounceJob?.cancel()
+        scope.cancel()
+        PresenceRuntime.log("Presence service stopped")
     }
 
     companion object {
-        private const val TAG = "AppleMediaListener"
-        private const val CHANNEL_ID = "apple_music_presence_channel"
-        private const val NOTIFICATION_ID = 42069
-        const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
+        const val CHANNEL_ID = "musicalified_presence"
+        const val NOTIFICATION_ID = 54321
+
+        const val ACTION_CONFIG_CHANGED = "com.skyler.musicpresence.CONFIG_CHANGED"
+        const val ACTION_FORCE_RECONNECT = "com.skyler.musicpresence.FORCE_RECONNECT"
+        const val ACTION_RESCAN_SESSIONS = "com.skyler.musicpresence.RESCAN"
+        const val ACTION_STOP_SERVICE = "com.skyler.musicpresence.STOP"
+
+        val SUPPORTED_PACKAGES = setOf(
+            "com.apple.android.music",
+            "com.apple.android.music.classical"
+        )
     }
 }

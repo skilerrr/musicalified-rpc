@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_dark"
@@ -19,7 +18,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="20dp">
+            android:layout_marginBottom="16dp">
 
             <ImageView
                 android:layout_width="36dp"
@@ -57,16 +56,16 @@
                 android:background="@drawable/bg_input"
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="4dp"
-                android:text="v1.0.0"
+                android:text="v1.1.0"
                 android:textColor="@color/text_muted"
                 android:textSize="11sp" />
         </LinearLayout>
 
-        <!-- Status Card -->
+        <!-- Live Status Card -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="14dp"
             app:cardBackgroundColor="@color/surface_card"
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp">
@@ -83,46 +82,73 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical">
 
-                    <TextView
-                        android:id="@+id/tvStatusDot"
-                        android:layout_width="10dp"
-                        android:layout_height="10dp"
-                        android:background="@color/status_green"
+                    <View
+                        android:id="@+id/statusIndicator"
+                        android:layout_width="12dp"
+                        android:layout_height="12dp"
+                        android:background="@color/status_red"
                         android:layout_marginEnd="10dp" />
 
-                    <TextView
-                        android:id="@+id/tvStatusText"
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Service Active"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tvStatusTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Disconnected"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvStatusSub"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Enter token and grant notification access"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp" />
+                    </LinearLayout>
 
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/switchService"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:layout_height="wrap_content" />
                 </LinearLayout>
 
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="@color/divider"
+                    android:layout_marginVertical="12dp" />
+
                 <TextView
-                    android:id="@+id/tvNowPlayingPreview"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="NOW PLAYING"
+                    android:textColor="@color/text_muted"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvNowPlaying"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="Ready for Apple Music..."
-                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="4dp"
+                    android:text="No music currently playing"
+                    android:textColor="@color/text_primary"
                     android:textSize="13sp" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- Discord Setup Card -->
+        <!-- Discord Credentials Card -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="14dp"
             app:cardBackgroundColor="@color/surface_card"
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp">
@@ -164,7 +190,7 @@
                         android:layout_height="48dp"
                         android:layout_weight="1"
                         android:background="@null"
-                        android:hint="Paste your Discord User Token"
+                        android:hint="Paste Discord User Token"
                         android:inputType="textPassword"
                         android:textColor="@color/text_primary"
                         android:textColorHint="@color/text_muted"
@@ -180,24 +206,44 @@
                         app:tint="@color/text_muted" />
                 </LinearLayout>
 
-                <Button
-                    android:id="@+id/btnSaveToken"
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:layout_marginTop="12dp"
-                    android:backgroundTint="@color/discord_blurple"
-                    android:text="Save Token"
-                    android:textColor="@color/text_primary"
-                    android:textSize="13sp"
-                    app:cornerRadius="10dp" />
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="12dp">
+
+                    <Button
+                        android:id="@+id/btnSaveToken"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:backgroundTint="@color/discord_blurple"
+                        android:text="Save Token"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        app:cornerRadius="10dp"
+                        android:layout_marginEnd="6dp" />
+
+                    <Button
+                        android:id="@+id/btnReconnect"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:backgroundTint="@color/surface_input"
+                        android:text="Reconnect"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        app:cornerRadius="10dp"
+                        android:layout_marginStart="6dp" />
+                </LinearLayout>
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- Kustomisasi Tipis (Preferences) -->
+        <!-- Customization Card -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="14dp"
             app:cardBackgroundColor="@color/surface_card"
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp">
@@ -217,7 +263,7 @@
                     android:textStyle="bold"
                     android:layout_marginBottom="12dp" />
 
-                <!-- Toggle Artwork -->
+                <!-- Artwork -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -234,14 +280,14 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Show Album Artwork"
+                            android:text="Album Artwork"
                             android:textColor="@color/text_primary"
                             android:textSize="14sp" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="HD 1000x1000 artwork fetched via iTunes"
+                            android:text="HD artwork resolved via iTunes"
                             android:textColor="@color/text_muted"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -249,11 +295,10 @@
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/switchArtwork"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:layout_height="wrap_content" />
                 </LinearLayout>
 
-                <!-- Toggle Button -->
+                <!-- Button -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -270,14 +315,14 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Show 'Listen on Apple Music' Button"
+                            android:text="Listen on Apple Music Button"
                             android:textColor="@color/text_primary"
                             android:textSize="14sp" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Clickable link straight to the track"
+                            android:text="Clickable link straight to track"
                             android:textColor="@color/text_muted"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -285,11 +330,10 @@
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/switchButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:layout_height="wrap_content" />
                 </LinearLayout>
 
-                <!-- Toggle Timestamps -->
+                <!-- Timestamps -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -305,14 +349,14 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Show Duration / Timestamps"
+                            android:text="Playback Progress Bar"
                             android:textColor="@color/text_primary"
                             android:textSize="14sp" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Displays live playback progress bar"
+                            android:text="Elapsed &amp; total track duration"
                             android:textColor="@color/text_muted"
                             android:textSize="11sp" />
                     </LinearLayout>
@@ -320,16 +364,16 @@
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/switchTimestamps"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:checked="true" />
+                        android:layout_height="wrap_content" />
                 </LinearLayout>
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- Permissions & System Requirements -->
+        <!-- Permissions Card -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
             app:cardBackgroundColor="@color/surface_card"
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp">
@@ -365,10 +409,47 @@
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
                     android:backgroundTint="@color/surface_input"
-                    android:text="Disable Battery Optimization (Recommended)"
+                    android:text="Disable Battery Optimization"
                     android:textColor="@color/text_secondary"
                     android:textSize="12sp"
                     app:cornerRadius="10dp" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Diagnostics Log Card -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="@color/surface_card"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Live Diagnostic Log"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/tvLogs"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_input"
+                    android:padding="10dp"
+                    android:text="No events yet\u2026"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp"
+                    android:fontFamily="monospace"
+                    android:lineSpacingExtra="3dp" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
