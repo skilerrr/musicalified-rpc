@@ -40,7 +40,8 @@ class AppPreferences(context: Context) {
         private const val KEY_SHOW_TIMESTAMPS = "show_timestamps"
         private const val KEY_SERVICE_ENABLED = "service_enabled"
 
-        // Optional: only used for artwork/buttons. Empty = plain presence activity.
-        const val DEFAULT_APP_ID = ""
+        // Musicalified Discord application. Required for artwork + buttons;
+        // users can override or clear it in the UI.
+        const val DEFAULT_APP_ID = "1562285738404478996"
     }
 }

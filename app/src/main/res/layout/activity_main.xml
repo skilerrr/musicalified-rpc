@@ -56,7 +56,7 @@
                 android:background="@drawable/bg_input"
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="4dp"
-                android:text="v1.2.0"
+                android:text="v1.3.0"
                 android:textColor="@color/text_muted"
                 android:textSize="11sp" />
         </LinearLayout>
@@ -258,7 +258,7 @@
                         android:layout_height="44dp"
                         android:layout_weight="1"
                         android:background="@drawable/bg_input"
-                        android:hint="e.g. 1234567890123456789"
+                        android:hint="Musicalified app id"
                         android:inputType="number"
                         android:paddingHorizontal="10dp"
                         android:textColor="@color/text_primary"
