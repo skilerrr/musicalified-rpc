@@ -29,6 +29,19 @@ jobs:
         gradle-version: '8.7'
         cache-disabled: true
 
+    - name: Restore signing keystore
+      env:
+        KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      run: |
+        echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/musicalified.p12"
+        {
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/musicalified.p12"
+          echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+          echo "ANDROID_KEY_ALIAS=$KEY_ALIAS"
+        } >> "$GITHUB_ENV"
+
     - name: Make gradlew executable
       run: chmod +x gradlew
 

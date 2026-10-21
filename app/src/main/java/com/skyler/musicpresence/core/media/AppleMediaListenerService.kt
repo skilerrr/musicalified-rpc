@@ -21,6 +21,7 @@ import com.skyler.musicpresence.core.discord.DiscordPayloads
 import com.skyler.musicpresence.core.itunes.iTunesSearchClient
 import com.skyler.musicpresence.core.discord.ExternalAssetClient
 import com.skyler.musicpresence.core.prefs.AppPreferences
+import com.skyler.musicpresence.core.youtube.YouTubeResolver
 import com.skyler.musicpresence.core.runtime.PresenceRuntime
 import com.skyler.musicpresence.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -43,6 +44,7 @@ class AppleMediaListenerService : Service() {
     private lateinit var prefs: AppPreferences
     private val itunesClient = iTunesSearchClient()
     private val externalAssetClient = ExternalAssetClient()
+    private val youtubeResolver = YouTubeResolver()
 
     private var activeController: MediaController? = null
     private var debounceJob: Job? = null
@@ -177,6 +179,13 @@ class AppleMediaListenerService : Service() {
                 itunesClient.searchTrack(title, artist)
             } else null
 
+            // YouTube does not expose the video id in MediaMetadata; fall back to a
+            // public search lookup so we can build a thumbnail + deep link.
+            val ytMatch = if (appId != null && !source.usesITunes && videoId == null) {
+                youtubeResolver.resolve(title, artist)
+            } else null
+            val resolvedVideoId = videoId ?: ytMatch?.videoId
+
             val now = System.currentTimeMillis()
             val startTs = if (prefs.showTimestamps && position >= 0) now - position else null
             val endTs = if (prefs.showTimestamps && duration > 0) (startTs ?: now) + duration else null
@@ -185,7 +194,7 @@ class AppleMediaListenerService : Service() {
             // grey question mark. Register the iTunes cover first, then use "mp:...".
             val artwork = if (prefs.showArtwork) {
                 if (source.usesITunes) search?.artworkUrl
-                else videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
+                else resolvedVideoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
             } else null
             val artworkRef = artwork?.let { url ->
                 externalAssetClient.register(appId.orEmpty(), prefs.discordToken, url)
@@ -198,10 +207,10 @@ class AppleMediaListenerService : Service() {
                     when {
                         source.usesITunes && !search?.trackViewUrl.isNullOrBlank() ->
                             add("Listen on Apple Music" to search!!.trackViewUrl)
-                        videoId != null ->
+                        resolvedVideoId != null ->
                             add(
                                 (if (source.type == 3) "Watch on YouTube" else "Listen on YouTube Music")
-                                    to "https://youtu.be/$videoId"
+                                    to "https://youtu.be/$resolvedVideoId"
                             )
                     }
                     add("Get This Status" to REPO_URL)
