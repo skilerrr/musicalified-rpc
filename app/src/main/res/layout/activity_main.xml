@@ -362,7 +362,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text=""Get This Status" to GitHub repo"
+                            android:text="&quot;Get This Status&quot; button to GitHub repo"
                             android:textColor="@color/text_muted"
                             android:textSize="11sp" />
                     </LinearLayout>

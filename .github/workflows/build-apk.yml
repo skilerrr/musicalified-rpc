@@ -34,6 +34,7 @@ jobs:
 
     - name: Build Debug APK
       run: |
+        set -o pipefail
         ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log || {
             echo "========== COMPILER ERROR DUMP =========="
             grep -E -C 2 "(e: |error:|FAILURE:)" build.log || tail -n 100 build.log
