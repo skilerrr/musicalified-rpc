@@ -12,6 +12,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
+data class AssetRegistration(
+    val reference: String?,
+    val httpCode: Int,
+    val detail: String
+)
+
 /**
  * Registers remote artwork with the Discord application so the client will render it.
  *
@@ -32,10 +38,12 @@ class ExternalAssetClient(
 ) {
     private val cache = LruCache<String, String>(100)
 
-    suspend fun register(appId: String, token: String, imageUrl: String): String? =
+    /** Verbose variant: used by the in-app "Test Cover" button so failures are readable. */
+    suspend fun registerVerbose(appId: String, token: String, imageUrl: String): AssetRegistration =
         withContext(Dispatchers.IO) {
-            if (appId.isBlank() || token.isBlank() || imageUrl.isBlank()) return@withContext null
-            cache.get(imageUrl)?.let { return@withContext it }
+            if (appId.isBlank()) return@withContext AssetRegistration(null, 0, "no application id")
+            if (token.isBlank()) return@withContext AssetRegistration(null, 0, "no token")
+            cache.get(imageUrl)?.let { return@withContext AssetRegistration(it, 200, "cached") }
 
             val body = JSONObject()
                 .put("urls", JSONArray().put(imageUrl))
@@ -44,6 +52,7 @@ class ExternalAssetClient(
             val request = Request.Builder()
                 .url("https://discord.com/api/v10/applications/$appId/external-assets")
                 .header("Authorization", token)
+                .header("User-Agent", "Discord-Android/2470")
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
 
@@ -51,21 +60,29 @@ class ExternalAssetClient(
                 client.newCall(request).execute().use { response ->
                     val text = response.body?.string().orEmpty()
                     if (!response.isSuccessful) {
-                        PresenceRuntime.log("artwork register failed HTTP ${response.code}")
-                        return@withContext null
+                        return@withContext AssetRegistration(null, response.code, text.take(300))
                     }
                     val path = JSONArray(text).optJSONObject(0)
                         ?.optString("external_asset_path")
                         .orEmpty()
-                    if (path.isBlank()) return@withContext null
-
+                    if (path.isBlank()) {
+                        return@withContext AssetRegistration(null, response.code, text.take(300))
+                    }
                     val reference = if (path.startsWith("mp:")) path else "mp:$path"
                     cache.put(imageUrl, reference)
-                    reference
+                    AssetRegistration(reference, response.code, "ok")
                 }
             } catch (e: Exception) {
-                PresenceRuntime.log("artwork register error: ${e.javaClass.simpleName}")
-                null
+                AssetRegistration(null, -1, "${e.javaClass.simpleName}: ${e.message}")
             }
         }
+
+    suspend fun register(appId: String, token: String, imageUrl: String): String? {
+        if (imageUrl.isBlank()) return null
+        val result = registerVerbose(appId, token, imageUrl)
+        if (result.reference == null) {
+            PresenceRuntime.log("artwork HTTP ${result.httpCode}: ${result.detail.take(140)}")
+        }
+        return result.reference
+    }
 }

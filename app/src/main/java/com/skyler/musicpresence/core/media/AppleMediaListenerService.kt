@@ -180,6 +180,8 @@ class AppleMediaListenerService : Service() {
                 externalAssetClient.register(appId.orEmpty(), prefs.discordToken, url)
             } ?: artwork
 
+            PresenceRuntime.log("artwork ref: ${artworkRef ?: "none"}")
+
             val buttons = buildList {
                 if (appId != null && prefs.showButton) {
                     add("Get This Status" to REPO_URL)

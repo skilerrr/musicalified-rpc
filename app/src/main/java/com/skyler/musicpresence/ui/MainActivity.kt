@@ -17,16 +17,22 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.skyler.musicpresence.R
+import com.skyler.musicpresence.core.discord.ExternalAssetClient
 import com.skyler.musicpresence.core.media.AppleMediaListenerService
 import com.skyler.musicpresence.core.prefs.AppPreferences
 import com.skyler.musicpresence.core.runtime.PresenceRuntime
 import com.skyler.musicpresence.databinding.ActivityMainBinding
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: AppPreferences
     private var isTokenVisible = false
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val notificationsLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -104,6 +110,29 @@ class MainActivity : AppCompatActivity() {
             prefs.applicationId = appId
             notifyService(AppleMediaListenerService.ACTION_CONFIG_CHANGED)
             toast(if (appId.isEmpty()) "App ID cleared (plain presence)" else "App ID saved")
+        }
+
+        binding.btnTestCover.setOnClickListener {
+            val token = prefs.discordToken
+            val appId = binding.etAppId.text.toString().trim()
+                .ifBlank { AppPreferences.DEFAULT_APP_ID }
+            if (token.isBlank()) {
+                toast("Save your token first")
+                return@setOnClickListener
+            }
+            PresenceRuntime.log("Testing artwork registration...")
+            scope.launch {
+                val result = ExternalAssetClient().registerVerbose(
+                    appId,
+                    token,
+                    "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/be/f2/12/bef2125b-0f9d-b965-abff-96cefc508f1d/0.jpg/1000x1000bb.jpg"
+                )
+                PresenceRuntime.log("TEST artwork HTTP ${result.httpCode}: ${result.detail}")
+                toast(
+                    if (result.reference != null) "Artwork registered"
+                    else "Artwork failed (HTTP ${result.httpCode})"
+                )
+            }
         }
 
         binding.btnReconnect.setOnClickListener {
