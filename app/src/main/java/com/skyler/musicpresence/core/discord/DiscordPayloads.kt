@@ -46,8 +46,7 @@ object DiscordPayloads {
         startTimestamp: Long?,
         endTimestamp: Long?,
         artworkUrl: String?,
-        songUrl: String?,
-        showButtons: Boolean,
+        buttons: List<Pair<String, String>>,
         applicationId: String?
     ): String {
         val activity = JSONObject()
@@ -77,14 +76,16 @@ object DiscordPayloads {
                 assets.put("large_text", album.ifBlank { "Apple Music" }.cap())
                 activity.put("assets", assets)
             }
-            if (showButtons && !songUrl.isNullOrBlank()) {
-                val buttons = JSONArray()
-                buttons.put("Listen on Apple Music")
-                activity.put("buttons", buttons)
+            if (buttons.isNotEmpty()) {
+                val labels = JSONArray()
+                val urls = JSONArray()
+                buttons.take(2).forEach { (label, url) ->
+                    labels.put(label)
+                    urls.put(url)
+                }
+                activity.put("buttons", labels)
 
                 val metadata = JSONObject()
-                val urls = JSONArray()
-                urls.put(songUrl)
                 metadata.put("button_urls", urls)
                 activity.put("metadata", metadata)
             }

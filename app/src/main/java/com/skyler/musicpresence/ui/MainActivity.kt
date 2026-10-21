@@ -65,6 +65,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupUI() {
         binding.etDiscordToken.setText(prefs.discordToken)
+        binding.etAppId.setText(prefs.applicationId)
         binding.switchService.isChecked = prefs.isServiceEnabled
         binding.switchArtwork.isChecked = prefs.showArtwork
         binding.switchButton.isChecked = prefs.showButton
@@ -92,6 +93,17 @@ class MainActivity : AppCompatActivity() {
             PresenceRuntime.forceReconnect(token)
             notifyService(AppleMediaListenerService.ACTION_FORCE_RECONNECT)
             toast("Token saved - connecting to Discord")
+        }
+
+        binding.btnSaveAppId.setOnClickListener {
+            val appId = binding.etAppId.text.toString().trim()
+            if (appId.isNotEmpty() && appId.length !in 17..19) {
+                toast("Application ID must be 17-19 digits")
+                return@setOnClickListener
+            }
+            prefs.applicationId = appId
+            notifyService(AppleMediaListenerService.ACTION_CONFIG_CHANGED)
+            toast(if (appId.isEmpty()) "App ID cleared (plain presence)" else "App ID saved")
         }
 
         binding.btnReconnect.setOnClickListener {

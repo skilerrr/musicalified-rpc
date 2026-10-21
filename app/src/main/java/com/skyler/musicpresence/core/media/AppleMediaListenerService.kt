@@ -161,13 +161,21 @@ class AppleMediaListenerService : Service() {
         debounceJob = scope.launch(Dispatchers.IO) {
             delay(1200) // debounce rapid skips so Discord is not spammed
 
-            val search = if (prefs.showArtwork || prefs.showButton) {
+            val appId = prefs.applicationId.takeIf { it.isNotBlank() }
+
+            val search = if (appId != null && prefs.showArtwork) {
                 itunesClient.searchTrack(title, artist)
             } else null
 
             val now = System.currentTimeMillis()
             val startTs = if (prefs.showTimestamps && position >= 0) now - position else null
             val endTs = if (prefs.showTimestamps && duration > 0) (startTs ?: now) + duration else null
+
+            val buttons = buildList {
+                if (appId != null && prefs.showButton) {
+                    add("Get This Status" to REPO_URL)
+                }
+            }
 
             val payload = DiscordPayloads.createPresenceUpdate(
                 title = title,
@@ -176,9 +184,8 @@ class AppleMediaListenerService : Service() {
                 startTimestamp = startTs,
                 endTimestamp = endTs,
                 artworkUrl = if (prefs.showArtwork) search?.artworkUrl else null,
-                songUrl = if (prefs.showButton) search?.trackViewUrl else null,
-                showButtons = prefs.showButton,
-                applicationId = prefs.applicationId.takeIf { it.isNotBlank() }
+                buttons = buttons,
+                applicationId = appId
             )
 
             PresenceRuntime.updatePresence(payload)
@@ -276,6 +283,8 @@ class AppleMediaListenerService : Service() {
         const val ACTION_FORCE_RECONNECT = "com.skyler.musicpresence.FORCE_RECONNECT"
         const val ACTION_RESCAN_SESSIONS = "com.skyler.musicpresence.RESCAN"
         const val ACTION_STOP_SERVICE = "com.skyler.musicpresence.STOP"
+
+        const val REPO_URL = "https://github.com/skilerrr/musicalified-rpc"
 
         val SUPPORTED_PACKAGES = setOf(
             "com.apple.android.music",
