@@ -155,6 +155,14 @@ class AppleMediaListenerService : Service() {
             return
         }
 
+        // YouTube exposes the video id either directly in metadata or via its notification.
+        val source = sourceFor(controller.packageName)
+        val videoId = if (source.usesITunes) null else {
+            meta.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
+                ?.takeIf { it.length == 11 }
+                ?: PresenceRuntime.videoIdFor(title)
+        }
+
         val key = "$title\u0000$artist\u0000$album"
         if (key == lastKey && debounceJob?.isActive == true) return
         lastKey = key
@@ -164,7 +172,6 @@ class AppleMediaListenerService : Service() {
             delay(1200) // debounce rapid skips so Discord is not spammed
 
             val appId = prefs.applicationId.takeIf { it.isNotBlank() }
-            val source = sourceFor(activeController?.packageName.orEmpty())
 
             val search = if (appId != null && prefs.showArtwork && source.usesITunes) {
                 itunesClient.searchTrack(title, artist)
@@ -176,7 +183,10 @@ class AppleMediaListenerService : Service() {
 
             // Discord refuses unregistered remote URLs for assets - they render as the
             // grey question mark. Register the iTunes cover first, then use "mp:...".
-            val artwork = if (prefs.showArtwork) search?.artworkUrl else null
+            val artwork = if (prefs.showArtwork) {
+                if (source.usesITunes) search?.artworkUrl
+                else videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
+            } else null
             val artworkRef = artwork?.let { url ->
                 externalAssetClient.register(appId.orEmpty(), prefs.discordToken, url)
             } ?: artwork
@@ -185,6 +195,15 @@ class AppleMediaListenerService : Service() {
 
             val buttons = buildList {
                 if (appId != null && prefs.showButton) {
+                    when {
+                        source.usesITunes && !search?.trackViewUrl.isNullOrBlank() ->
+                            add("Listen on Apple Music" to search!!.trackViewUrl)
+                        videoId != null ->
+                            add(
+                                (if (source.type == 3) "Watch on YouTube" else "Listen on YouTube Music")
+                                    to "https://youtu.be/$videoId"
+                            )
+                    }
                     add("Get This Status" to REPO_URL)
                 }
             }

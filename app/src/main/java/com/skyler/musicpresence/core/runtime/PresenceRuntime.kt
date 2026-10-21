@@ -47,6 +47,27 @@ object PresenceRuntime {
     @Volatile
     private var activeToken: String = ""
 
+    /** Latest YouTube media id seen in a notification, paired with its title. */
+    @Volatile
+    var mediaVideoId: String? = null
+
+    @Volatile
+    var mediaVideoTitle: String? = null
+
+    fun rememberVideoId(title: String?, videoId: String?) {
+        if (videoId.isNullOrBlank()) return
+        mediaVideoTitle = title
+        mediaVideoId = videoId
+    }
+
+    fun videoIdFor(title: String): String? {
+        val id = mediaVideoId ?: return null
+        val known = mediaVideoTitle ?: return id
+        val a = known.trim().lowercase()
+        val b = title.trim().lowercase()
+        return if (a == b || a.startsWith(b.take(12)) || b.startsWith(a.take(12))) id else null
+    }
+
     @Volatile
     private var gateway: DiscordGateway? = null
 

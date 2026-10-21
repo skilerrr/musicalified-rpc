@@ -12,7 +12,8 @@
 - **Minimalist & Battery Friendly**: Native ViewBinding architecture with no heavy UI framework runtimes. Target background memory footprint is only **~15MB - 25MB**.
 - **Essential Customization**:
   - Toggle album artwork display
-  - Toggle the "Get This Status" button (links to this repo)
+  - Toggle buttons: "Listen on Apple Music" / "Watch on YouTube" deep link + "Get This Status" (links to this repo)
+  - YouTube / YouTube Music thumbnails (`i.ytimg.com`) resolved from the video id
   - Toggle live playback duration and timestamps
   - Configurable Discord Application ID
 
