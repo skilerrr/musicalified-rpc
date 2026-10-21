@@ -47,11 +47,13 @@ object DiscordPayloads {
         endTimestamp: Long?,
         artworkUrl: String?,
         buttons: List<Pair<String, String>>,
-        applicationId: String?
+        applicationId: String?,
+        activityName: String = "Apple Music",
+        activityType: Int = 2
     ): String {
         val activity = JSONObject()
-        activity.put("name", "Apple Music")
-        activity.put("type", 2) // 2 = Listening to
+        activity.put("name", activityName)
+        activity.put("type", activityType) // 2 = Listening to, 3 = Watching
         activity.put("details", title.cap())
         if (artist.isNotBlank()) activity.put("state", artist.cap())
 

@@ -164,8 +164,9 @@ class AppleMediaListenerService : Service() {
             delay(1200) // debounce rapid skips so Discord is not spammed
 
             val appId = prefs.applicationId.takeIf { it.isNotBlank() }
+            val source = sourceFor(activeController?.packageName.orEmpty())
 
-            val search = if (appId != null && prefs.showArtwork) {
+            val search = if (appId != null && prefs.showArtwork && source.usesITunes) {
                 itunesClient.searchTrack(title, artist)
             } else null
 
@@ -196,7 +197,9 @@ class AppleMediaListenerService : Service() {
                 endTimestamp = endTs,
                 artworkUrl = artworkRef,
                 buttons = buttons,
-                applicationId = appId
+                applicationId = appId,
+                activityName = source.label,
+                activityType = source.type
             )
 
             PresenceRuntime.updatePresence(payload)
@@ -299,7 +302,27 @@ class AppleMediaListenerService : Service() {
 
         val SUPPORTED_PACKAGES = setOf(
             "com.apple.android.music",
-            "com.apple.android.music.classical"
+            "com.apple.android.music.classical",
+            "com.google.android.apps.youtube.music",
+            "com.google.android.youtube"
         )
+
+        /**
+         * Per-app presentation: activity label + activity type
+         * (2 = Listening to, 3 = Watching) + whether iTunes can resolve artwork.
+         */
+        data class Source(val label: String, val type: Int, val usesITunes: Boolean)
+
+        fun sourceFor(packageName: String): Source = when {
+            packageName.contains("classical") ->
+                Source("Apple Music Classical", 2, true)
+            packageName.contains("apple.android.music") ->
+                Source("Apple Music", 2, true)
+            packageName.contains("youtube.music") ->
+                Source("YouTube Music", 2, false)
+            packageName.contains("youtube") ->
+                Source("YouTube", 3, false)
+            else -> Source("Apple Music", 2, false)
+        }
     }
 }

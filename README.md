@@ -1,6 +1,6 @@
 # Musicalified - RPC 🎵
 
-> Ultra-lightweight, battery-efficient Discord Rich Presence companion for Apple Music on Android. Designed for seamless, set-and-forget background operation.
+> Ultra-lightweight, battery-efficient Discord Rich Presence companion for Android. Apple Music, Apple Music Classical, YouTube Music and YouTube — set-and-forget, event-driven, no polling.
 
 ---
 
@@ -12,7 +12,7 @@
 - **Minimalist & Battery Friendly**: Native ViewBinding architecture with no heavy UI framework runtimes. Target background memory footprint is only **~15MB - 25MB**.
 - **Essential Customization**:
   - Toggle album artwork display
-  - Toggle "Listen on Apple Music" interactive button
+  - Toggle the "Get This Status" button (links to this repo)
   - Toggle live playback duration and timestamps
   - Configurable Discord Application ID
 
@@ -69,14 +69,14 @@ The compiled APK will be located at `app/build/outputs/apk/debug/app-debug.apk`.
 2. Grant **Notification Listener Permission** when prompted (required by Android to read active media session state).
 3. Whitelist the app from system battery optimizations to prevent background freeze on OEM devices (MIUI, OneUI, ColorOS).
 4. Enter your Discord User Token in the setup screen and save.
-5. Play your favorite track on Apple Music — your Discord profile will update in real time.
+5. Play a track in Apple Music / YouTube Music, or open a YouTube video — your Discord profile updates in real time (music shows as *Listening to*, video as *Watching*).
 
 ---
 
 ## 🛡 Disclaimer & Trademarks
 
 - **Musicalified - RPC** is an independent open-source project and is **not** affiliated with, maintained, authorized, endorsed, or sponsored by Apple Inc. or Discord Inc.
-- **Apple Music** and **iTunes** are trademarks of Apple Inc., registered in the U.S. and other countries.
+- **Apple Music**, **iTunes** and **YouTube** are trademarks of their respective owners (Apple Inc., Google LLC), registered in the U.S. and other countries.
 - **Discord** is a registered trademark of Discord Inc.
 - All product and company names are trademarks™ or registered® trademarks of their respective holders. Use of them does not imply any affiliation with or endorsement by them.
 - This utility interacts directly with the Discord Gateway. Rate-limiting and standard client heartbeating intervals are strictly adhered to, but user discretion is advised.

@@ -56,7 +56,7 @@
                 android:background="@drawable/bg_input"
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="4dp"
-                android:text="v1.5.0"
+                android:text="v1.6.0"
                 android:textColor="@color/text_muted"
                 android:textSize="11sp" />
         </LinearLayout>
