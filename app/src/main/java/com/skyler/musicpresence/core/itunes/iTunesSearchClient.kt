@@ -24,18 +24,23 @@ class iTunesSearchClient(
     // Cache up to 100 resolved songs in memory (instant lookup when repeating songs)
     private val cache = LruCache<String, iTunesSearchResult>(100)
 
-    suspend fun searchTrack(title: String, artist: String): iTunesSearchResult? = withContext(Dispatchers.IO) {
-        val cacheKey = "${title.trim().lowercase()} - ${artist.trim().lowercase()}"
+    suspend fun searchTrack(
+        title: String,
+        artist: String,
+        album: String = ""
+    ): iTunesSearchResult? = withContext(Dispatchers.IO) {
+        val cacheKey = listOf(title, artist, album).joinToString("|") { it.trim().lowercase() }
         cache.get(cacheKey)?.let { return@withContext it }
 
         try {
-            val query = "$title $artist"
+            val query = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ")
             val encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
-            val url = "https://itunes.apple.com/search?term=$encodedQuery&entity=song&limit=1"
+            val url =
+                "https://itunes.apple.com/search?term=$encodedQuery&entity=song&media=music&limit=15"
 
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "MusicPresenceAndroid/1.0")
+                .header("User-Agent", "MusicPresenceAndroid/1.1")
                 .build()
 
             client.newCall(request).execute().use { response ->
@@ -45,29 +50,83 @@ class iTunesSearchClient(
                 val resultCount = json.optInt("resultCount", 0)
                 if (resultCount == 0) return@withContext null
 
-                val firstResult = json.getJSONArray("results").getJSONObject(0)
-                val rawArtwork = firstResult.optString("artworkUrl100", "")
-                val trackViewUrl = firstResult.optString("trackViewUrl", "")
+                val results = json.getJSONArray("results")
+                var best: iTunesSearchResult? = null
+                var bestScore = Int.MIN_VALUE
 
-                // Convert 100x100 thumbnail to crisp 1000x1000 HD cover
-                val highResArtwork = if (rawArtwork.isNotEmpty()) {
-                    rawArtwork.replace("100x100bb.jpg", "1000x1000bb.jpg")
-                } else {
-                    ""
+                for (i in 0 until results.length()) {
+                    val item = results.optJSONObject(i) ?: continue
+                    val rawArtwork = item.optString("artworkUrl100", "")
+                    if (rawArtwork.isBlank()) continue
+
+                    val score = score(item, title, artist, album)
+                    if (score > bestScore) {
+                        bestScore = score
+                        best = iTunesSearchResult(
+                            // Convert 100x100 thumbnail to crisp 1000x1000 HD cover
+                            artworkUrl = rawArtwork.replace("100x100bb.jpg", "1000x1000bb.jpg"),
+                            trackViewUrl = item.optString("trackViewUrl", "")
+                        )
+                    }
                 }
 
-                if (highResArtwork.isNotEmpty() || trackViewUrl.isNotEmpty()) {
-                    val result = iTunesSearchResult(
-                        artworkUrl = highResArtwork,
-                        trackViewUrl = trackViewUrl
-                    )
-                    cache.put(cacheKey, result)
-                    return@withContext result
+                // Nothing matched closely enough: no cover beats the wrong cover.
+                if (best != null && bestScore >= MIN_SCORE) {
+                    cache.put(cacheKey, best)
+                    return@withContext best
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
         null
+    }
+
+    /** Weighted freshness of a candidate: artist identity matters most, then title, then album. */
+    private fun score(item: JSONObject, title: String, artist: String, album: String): Int {
+        var score = 0
+        val wantedArtist = normalise(artist)
+        val wantedTitle = normalise(title)
+        val wantedAlbum = normalise(album)
+
+        if (wantedArtist.isNotBlank()) {
+            val foundArtist = normalise(item.optString("artistName"))
+            score += when {
+                foundArtist == wantedArtist -> 60
+                foundArtist.contains(wantedArtist) || wantedArtist.contains(foundArtist) -> 35
+                else -> -25
+            }
+        }
+
+        if (wantedTitle.isNotBlank()) {
+            val foundTitle = normalise(item.optString("trackName"))
+            score += when {
+                foundTitle == wantedTitle -> 50
+                foundTitle.contains(wantedTitle) || wantedTitle.contains(foundTitle) -> 25
+                else -> -10
+            }
+        }
+
+        if (wantedAlbum.isNotBlank()) {
+            val foundAlbum = normalise(item.optString("collectionName"))
+            score += when {
+                foundAlbum == wantedAlbum -> 15
+                foundAlbum.contains(wantedAlbum) || wantedAlbum.contains(foundAlbum) -> 8
+                else -> 0
+            }
+        }
+        return score
+    }
+
+    private fun normalise(value: String): String = value
+        .lowercase()
+        .replace(Regex("\\([^)]*\\)"), " ")
+        .replace(Regex("\\[[^]]*]"), " ")
+        .replace(Regex("[^a-z0-9 ]"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+    private companion object {
+        const val MIN_SCORE = 40
     }
 }

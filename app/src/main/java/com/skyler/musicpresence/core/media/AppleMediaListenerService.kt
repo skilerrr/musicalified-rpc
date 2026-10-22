@@ -1,5 +1,6 @@
 package com.skyler.musicpresence.core.media
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -176,7 +177,7 @@ class AppleMediaListenerService : Service() {
             val appId = prefs.applicationId.takeIf { it.isNotBlank() }
 
             val search = if (appId != null && prefs.showArtwork && source.usesITunes) {
-                itunesClient.searchTrack(title, artist)
+                itunesClient.searchTrack(title, artist, album)
             } else null
 
             // YouTube does not expose the video id in MediaMetadata; fall back to a
@@ -308,6 +309,35 @@ class AppleMediaListenerService : Service() {
         }
     }
 
+    /**
+     * Swiping the task away makes several OEM ROMs (MIUI/HyperOS, ColorOS, One UI) tear down
+     * the foreground service, which kills the gateway socket and with it the presence. Ask the
+     * alarm manager for one immediate restart so the activity survives the swipe.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val prefs = AppPreferences(this)
+        if (prefs.isServiceEnabled && prefs.discordToken.isNotBlank()) {
+            val restartIntent = Intent(this, AppleMediaListenerService::class.java).apply {
+                action = ACTION_RESCAN_SESSIONS
+            }
+            val pending = PendingIntent.getForegroundService(
+                this,
+                RESTART_REQUEST_CODE,
+                restartIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            runCatching {
+                getSystemService(AlarmManager::class.java)?.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    System.currentTimeMillis() + 1_000L,
+                    pending
+                )
+            }
+            PresenceRuntime.log("Task removed - restart scheduled")
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         runCatching { mediaSessionManager.removeOnActiveSessionsChangedListener(sessionsListener) }
@@ -327,6 +357,8 @@ class AppleMediaListenerService : Service() {
         const val ACTION_STOP_SERVICE = "com.skyler.musicpresence.STOP"
 
         const val REPO_URL = "https://github.com/skilerrr/musicalified-rpc"
+
+        private const val RESTART_REQUEST_CODE = 7611
 
         val SUPPORTED_PACKAGES = setOf(
             "com.apple.android.music",
