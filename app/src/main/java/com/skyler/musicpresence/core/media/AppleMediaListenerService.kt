@@ -180,6 +180,13 @@ class AppleMediaListenerService : Service() {
                 itunesClient.searchTrack(title, artist, album)
             } else null
 
+            if (source.usesITunes && prefs.showArtwork && appId != null) {
+                val note = search?.let {
+                    "cover: " + it.matchedArtist + " - " + it.matchedTrack + " [" + it.country + "]"
+                } ?: "cover: no match for " + title + " / " + artist
+                PresenceRuntime.log(note)
+            }
+
             // YouTube does not expose the video id in MediaMetadata; fall back to a
             // public search lookup so we can build a thumbnail + deep link.
             val ytMatch = if (appId != null && !source.usesITunes && videoId == null) {
