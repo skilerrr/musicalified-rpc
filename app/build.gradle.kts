@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.skyler.musicpresence"
-    compileSdk = 34
+    compileSdk = 36
 
     val stableKeystore = System.getenv("ANDROID_KEYSTORE_PATH")?.let { path ->
         if (file(path).exists()) file(path) else null
@@ -29,9 +29,9 @@ android {
     defaultConfig {
         applicationId = "com.skyler.musicpresence"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 11
-        versionName = "1.9.1"
+        targetSdk = 36
+        versionCode = 12
+        versionName = "1.10.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

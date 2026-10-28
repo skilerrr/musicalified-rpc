@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.skyler.musicpresence.core.prefs.AppPreferences
+import com.skyler.musicpresence.core.runtime.PresenceRuntime
 
 /**
  * Brings the presence service back after a reboot, an app update, or an OEM "task removed"
@@ -25,6 +26,13 @@ class BootReceiver : BroadcastReceiver() {
             this.action = AppleMediaListenerService.ACTION_RESCAN_SESSIONS
         }
         runCatching { ContextCompat.startForegroundService(context, serviceIntent) }
+            .onFailure { error ->
+                // Android 15+ refuses foreground-service starts from BOOT_COMPLETED for the
+                // mediaPlayback type; surfacing the reason beats a silent no-op.
+                PresenceRuntime.log(
+                    "Boot start blocked: " + error.javaClass.simpleName + ": " + error.message
+                )
+            }
     }
 
     private companion object {

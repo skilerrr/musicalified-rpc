@@ -20,6 +20,9 @@ object PresenceRuntime {
 
     enum class State { OFF, CONNECTING, READY, FAILED }
 
+    /** One-line gateway summary for the in-app diagnostics dump. */
+    fun describe(): String = state.name + (detail?.let { " - " + it } ?: "")
+
     data class Snapshot(
         val state: State,
         val detail: String?,

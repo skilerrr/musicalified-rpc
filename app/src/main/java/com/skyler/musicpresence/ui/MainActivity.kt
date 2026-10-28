@@ -2,9 +2,11 @@ package com.skyler.musicpresence.ui
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.session.MediaSessionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -19,6 +21,7 @@ import androidx.core.content.ContextCompat
 import com.skyler.musicpresence.R
 import com.skyler.musicpresence.core.discord.ExternalAssetClient
 import com.skyler.musicpresence.core.media.AppleMediaListenerService
+import com.skyler.musicpresence.core.media.AppleNotificationListener
 import com.skyler.musicpresence.core.prefs.AppPreferences
 import com.skyler.musicpresence.core.runtime.PresenceRuntime
 import com.skyler.musicpresence.databinding.ActivityMainBinding
@@ -111,6 +114,8 @@ class MainActivity : AppCompatActivity() {
             notifyService(AppleMediaListenerService.ACTION_CONFIG_CHANGED)
             toast(if (appId.isEmpty()) "App ID cleared (plain presence)" else "App ID saved")
         }
+
+        binding.btnDiagnostics.setOnClickListener { runDiagnostics() }
 
         binding.btnTestCover.setOnClickListener {
             val token = prefs.discordToken
@@ -208,6 +213,47 @@ class MainActivity : AppCompatActivity() {
         } else {
             snapshot.logs.joinToString("\n")
         }
+    }
+
+    /**
+     * Dumps everything the app can observe about its own runtime, so a broken setup on a new
+     * Android release can be diagnosed from a screenshot instead of guesswork.
+     */
+    private fun runDiagnostics() {
+        PresenceRuntime.log("--- diagnostics ---")
+        PresenceRuntime.log(
+            "android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + "), " +
+                Build.MANUFACTURER + " " + Build.MODEL
+        )
+        PresenceRuntime.log("app targetSdk " + applicationInfo.targetSdkVersion)
+
+        val notifAccess =
+            NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+        PresenceRuntime.log("notification access: " + notifAccess)
+
+        val power = getSystemService(PowerManager::class.java)
+        val unrestricted = power?.isIgnoringBatteryOptimizations(packageName) ?: false
+        PresenceRuntime.log("battery unrestricted: " + unrestricted)
+
+        PresenceRuntime.log(
+            "service enabled: " + prefs.isServiceEnabled +
+                ", token set: " + prefs.discordToken.isNotBlank() +
+                ", app id: " + prefs.applicationId
+        )
+        PresenceRuntime.log("gateway: " + PresenceRuntime.describe())
+
+        try {
+            val manager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val sessions = manager.getActiveSessions(
+                ComponentName(this, AppleNotificationListener::class.java)
+            )
+            PresenceRuntime.log("sessions: " + sessions.size + " " + sessions.map { it.packageName })
+        } catch (e: Exception) {
+            PresenceRuntime.log("sessions blocked: " + e.javaClass.simpleName + ": " + e.message)
+        }
+
+        notifyService(AppleMediaListenerService.ACTION_RESCAN_SESSIONS)
+        toast("Diagnostics written to log")
     }
 
     private fun notifyService(action: String) {

@@ -111,6 +111,7 @@ class AppleMediaListenerService : Service() {
             val sessions = mediaSessionManager.getActiveSessions(
                 ComponentName(this, AppleNotificationListener::class.java)
             )
+            PresenceRuntime.log("scan: " + sessions.size + " active session(s)")
             checkSessions(sessions)
         } catch (e: Exception) {
             PresenceRuntime.log("Session scan blocked: ${e.javaClass.simpleName}")
